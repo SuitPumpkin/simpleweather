@@ -32,14 +32,59 @@ function cacheSet(key, value, ttl = CACHE_TTL_MS) {
   return value;
 }
 
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const pendingRequests = new Map();
+
+function dedupeFetch(key, fetcher) {
+  if (pendingRequests.has(key)) return pendingRequests.get(key);
+  const promise = fetcher().finally(() => pendingRequests.delete(key));
+  pendingRequests.set(key, promise);
+  return promise;
+}
+
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    signal: AbortSignal.timeout(8000),
-    headers: { Accept: 'application/json', ...options.headers },
+  return dedupeFetch(url, async () => {
+    const maxRetries = 3;
+    let lastError;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: AbortSignal.timeout(8000),
+          headers: { Accept: 'application/json', ...options.headers },
+        });
+
+        if (response.status === 429) {
+          if (attempt === maxRetries) {
+            throw new Error(`Weather provider returned 429 (rate limited)`);
+          }
+          const retryAfter = Number(response.headers.get('Retry-After'));
+          const delay = Number.isFinite(retryAfter) && retryAfter > 0
+            ? Math.min(retryAfter * 1000, 5000)
+            : Math.min(1000 * 2 ** attempt, 5000);
+          await sleep(delay);
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Weather provider returned ${response.status}`);
+        }
+
+        return response.json();
+      } catch (error) {
+        lastError = error;
+        if (attempt === maxRetries) break;
+        const delay = Math.min(1000 * 2 ** attempt, 5000);
+        await sleep(delay);
+      }
+    }
+
+    throw lastError || new Error('Weather provider request failed');
   });
-  if (!response.ok) throw new Error(`Weather provider returned ${response.status}`);
-  return response.json();
 }
 
 function validateCoordinates(lat, lon) {
