@@ -1,24 +1,90 @@
 # SimpleWeather
 
-SimpleWeather is a focused weather-planning experience built around a map. It combines a fast short-term forecast with five-year historical context so users can make clearer outdoor plans.
+[![SimpleWeather](https://img.shields.io/badge/Live-Demo-blue?style=for-the-badge&logo=render)](https://simpleweather-api.onrender.com/health)
 
-## About this repository
+**Rodrigo Alejandro Loza Navarro**  
+Software Developer · Creative Technologist
+
+[GitHub](https://github.com/SuitPumpkin) · [LinkedIn](https://www.linkedin.com/in/SuitPumpkin/)
+
+---
+
+## About
+
+**SimpleWeather** is a focused weather-planning experience built around a map. It combines a fast short-term forecast with five-year historical context so users can make clearer outdoor plans.
 
 This is an independent React and Node.js reimplementation based on the original collaborative hackathon project, [Will-It-Rain-On-My-Parade](https://github.com/SuitPumpkin/Will-It-Rain-On-My-Parade). The original project and its contributors are part of the history of the idea; this repository contains the new implementation, architecture, and visual direction.
 
 Please preserve the original project credits when presenting or distributing this work.
 
-## Stack
+---
 
-- **Web:** React 18 + Vite + Leaflet
-- **API:** Node.js 20 + Express
-- **Providers:** Open-Meteo and NASA POWER
+## Tech Stack
+
+| Technology | Purpose |
+|---|---|
+| **React 18** | Frontend framework |
+| **Vite** | Development and build tool |
+| **Leaflet** | Interactive maps |
+| **Node.js 20** | Backend runtime |
+| **Express 5** | API framework |
+| **Open-Meteo** | Forecast and weather data |
+| **NASA POWER** | Historical weather data |
 
 The API performs historical provider requests concurrently, caches responses in memory, validates inputs, and applies upstream timeouts. The web client loads the city dataset on demand to keep the initial bundle small.
 
-## Run locally
+---
 
-Requirements: Node.js 20 or newer.
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `GET` | `/weather?lat=&lon=&day=&month=&year=` | 5-year historical summary |
+| `GET` | `/forecast?lat=&lon=&date=YYYY-MM-DD` | Short-term forecast |
+
+---
+
+## Project Structure
+
+```
+simpleweather/
+├── backend/
+│   ├── server.js          # Express API
+│   ├── package.json
+│   ├── package-lock.json
+│   └── .env.example
+│
+├── frontend/
+│   ├── vite.config.js      # Vite + React
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── index.html
+│   ├── .env.example
+│   │
+│   ├── public/
+│   │   ├── index.html
+│   │   └── datasets/
+│   │       └── worldcities.json
+│   └── src/
+│       ├── App.jsx
+│       ├── main.jsx
+│       └── styles.css
+│
+├── .gitignore
+├── LICENSE
+└── README.md
+```
+
+---
+
+## Development
+
+### Requirements
+
+- Node.js 20 or newer
+
+### Installation
 
 ```bash
 # API
@@ -26,7 +92,7 @@ cd backend
 npm install
 npm run dev
 
-# In another terminal, web client
+# Web client (in another terminal)
 cd frontend
 npm install
 npm run dev
@@ -34,13 +100,26 @@ npm run dev
 
 Open `http://localhost:5173`. The API runs at `http://localhost:8000`.
 
+---
+
 ## Configuration
 
 Copy `backend/.env.example` to `backend/.env` and configure `NASA_API_KEY` when required by the NASA POWER account. Configure allowed origins with `CORS_ORIGINS` if the frontend is deployed separately.
 
+```env
+NASA_API_KEY=your_nasa_api_key
+CORS_ORIGINS=http://localhost:5173,http://localhost:8080
+```
+
 For a remote API, copy `frontend/.env.example` to `frontend/.env.local` and set `VITE_API_URL`.
 
-## Production build
+```env
+VITE_API_URL=http://127.0.0.1:8000
+```
+
+---
+
+## Production Build
 
 ```bash
 cd frontend
@@ -50,25 +129,36 @@ cd ../backend
 npm start
 ```
 
-## Creating the new Git repository
+---
 
-Create an empty repository named `simpleweather` under the account or organization that will own this version. Then run from this directory:
+## Deployment
 
-```bash
-git remote rename origin original-hackathon
-git remote add origin https://github.com/YOUR_ACCOUNT/simpleweather.git
-git add .
-git commit -m "Rebrand project as SimpleWeather"
-git push -u origin HEAD
-```
+The project is configured for deployment on **Render** with two services.
 
-Keep `original-hackathon` if you want the original repository to remain available as a reference. Do not force-push over the collaborative repository.
+| Service | Type | Root Directory | Build Command | Start Command | Publish Dir |
+|---|---|---|---|---|---|
+| API | Web Service | `backend/` | `npm install` | `npm start` | — |
+| Web | Static Site | `frontend/` | `npm install && npm run build` | — | `dist/` |
 
-## API endpoints
+### Environment Variables
 
-- `GET /health`
-- `GET /weather?lat={lat}&lon={lon}&day={day}&month={month}&year={year}`
-- `GET /forecast?lat={lat}&lon={lon}&date={YYYY-MM-DD}`
+**API service**
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `NASA_API_KEY` | No | — | NASA POWER API key for higher rate limits |
+| `CORS_ORIGINS` | No | `http://localhost:5173,http://localhost:8080` | Comma-separated allowed origins |
+| `PORT` | No | `8000` | Server port (injected by Render) |
+
+**Web service**
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `VITE_API_URL` | Yes | `http://127.0.0.1:8000` | Backend API URL |
+
+Set `VITE_API_URL` to the Render URL of your API service, e.g. `https://simpleweather-api.onrender.com`. Set `CORS_ORIGINS` on the API to the Render URL of your frontend.
+
+---
 
 ## License
 
