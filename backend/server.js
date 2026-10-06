@@ -6,6 +6,8 @@ const app = express();
 const port = Number(process.env.PORT || 8000);
 const cache = new Map();
 const CACHE_TTL_MS = 10 * 60 * 1000;
+const STALE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const FORECAST_CACHE_TTL_MS = 30 * 60 * 1000;
 const NASA_URL = 'https://power.larc.nasa.gov/api/temporal/daily/point';
 const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_ARCHIVE = 'https://archive-api.open-meteo.com/v1/archive';
@@ -18,17 +20,20 @@ const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://local
 app.use(cors({ origin: origins }));
 app.use(express.json());
 
-function cacheGet(key) {
+function cacheGet(key, allowStale = false) {
   const entry = cache.get(key);
-  if (!entry || entry.expiresAt < Date.now()) {
+  if (!entry) return null;
+  if (entry.expiresAt >= Date.now()) return entry.value;
+  if (allowStale && entry.staleUntil >= Date.now()) return entry.value;
+  if (entry.staleUntil < Date.now()) {
     cache.delete(key);
-    return null;
   }
-  return entry.value;
+  return null;
 }
 
-function cacheSet(key, value, ttl = CACHE_TTL_MS) {
-  cache.set(key, { value, expiresAt: Date.now() + ttl });
+function cacheSet(key, value, ttl = CACHE_TTL_MS, staleTtl = STALE_CACHE_TTL_MS) {
+  const now = Date.now();
+  cache.set(key, { value, expiresAt: now + ttl, staleUntil: now + ttl + staleTtl });
   return value;
 }
 
@@ -47,7 +52,7 @@ function dedupeFetch(key, fetcher) {
 
 async function fetchJson(url, options = {}) {
   return dedupeFetch(url, async () => {
-    const maxRetries = 3;
+    const maxRetries = 1;
     let lastError;
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -60,7 +65,11 @@ async function fetchJson(url, options = {}) {
 
         if (response.status === 429) {
           if (attempt === maxRetries) {
-            throw new Error(`Weather provider returned 429 (rate limited)`);
+            const error = new Error('Weather provider returned 429 (rate limited)');
+            error.status = 429;
+            const retryAfter = Number(response.headers.get('Retry-After'));
+            if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfter = Math.ceil(retryAfter);
+            throw error;
           }
           const retryAfter = Number(response.headers.get('Retry-After'));
           const delay = Number.isFinite(retryAfter) && retryAfter > 0
@@ -202,9 +211,18 @@ app.get('/forecast', async (request, response) => {
     const probability = daily.precipitation_probability_max?.[0] ?? rainProbability(daily.precipitation_sum?.[0] ?? 0);
     const forecast = daily.time.slice(1).map((day, index) => ({ date: day, max: daily.temperature_2m_max[index + 1], min: daily.temperature_2m_min[index + 1], rainProb: daily.precipitation_probability_max?.[index + 1] ?? rainProbability(daily.precipitation_sum?.[index + 1] ?? 0), weatherCode: daily.weather_code[index + 1] }));
     const result = { main_day: { date: daily.time[0], max: daily.temperature_2m_max[0], min: daily.temperature_2m_min[0], rainProb: probability, weatherCode: daily.weather_code[0] }, forecast, hourly_data: data.hourly.time.slice(0, 24).map((time, index) => ({ hour: time.split('T')[1], temp: data.hourly.temperature_2m[index] })) };
-    return response.json(cacheSet(key, result, 5 * 60 * 1000));
+    return response.json(cacheSet(key, result, FORECAST_CACHE_TTL_MS));
   } catch (error) {
     console.error('Forecast error:', error.message);
+    if (error.status === 429) {
+      const stale = cacheGet(key, true);
+      if (stale) {
+        response.set('X-Weather-Data', 'stale');
+        return response.json(stale);
+      }
+      if (error.retryAfter) response.set('Retry-After', String(error.retryAfter));
+      return response.status(503).json({ error: 'The weather provider is temporarily rate limited. Please try again shortly.' });
+    }
     return response.status(502).json({ error: 'The weather forecast could not be obtained.' });
   }
 });

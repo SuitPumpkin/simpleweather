@@ -124,7 +124,7 @@ function App() {
       if (!historyResponse.ok && !forecastResponse.ok) throw new Error('Weather providers are unavailable right now.');
       setHistory(historyResponse.ok ? historyJson : null);
       setForecast(forecastResponse.ok ? forecastJson : null);
-      setView(forecastJson?.status === 'unavailable' ? 'historical' : 'forecast');
+      setView(forecastJson?.status === 'unavailable' || !forecastResponse.ok ? 'historical' : 'forecast');
     } catch (loadError) {
       setError(loadError.message || 'Could not load weather data.');
     } finally {

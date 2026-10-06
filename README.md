@@ -27,7 +27,7 @@ Please preserve the original project credits when presenting or distributing thi
 | **Open-Meteo** | Forecast and weather data |
 | **NASA POWER** | Historical weather data |
 
-The API performs historical provider requests concurrently, caches responses in memory, validates inputs, and applies upstream timeouts. The web client loads the city dataset on demand to keep the initial bundle small.
+The API performs historical provider requests concurrently, caches responses in memory, validates inputs, and applies upstream timeouts. Forecast responses are cached for 30 minutes and can be served stale for up to six hours if Open-Meteo temporarily rate-limits the production server. The web client loads the city dataset on demand to keep the initial bundle small.
 
 ---
 
