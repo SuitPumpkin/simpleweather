@@ -1,11 +1,7 @@
 # SimpleWeather
+<img width="854" height="384" alt="mockup-all-framed" src="https://github.com/user-attachments/assets/1d0d87ae-0c4b-4dec-910d-5eb3694aa265" />
 
 [![SimpleWeather](https://img.shields.io/badge/Live-Demo-blue?style=for-the-badge&logo=render)](https://simpleweather-api.onrender.com/health)
-
-**Rodrigo Alejandro Loza Navarro**  
-Software Developer · Creative Technologist
-
-[GitHub](https://github.com/SuitPumpkin) · [LinkedIn](https://www.linkedin.com/in/SuitPumpkin/)
 
 ---
 
