@@ -1,24 +1,12 @@
-# frontend
+# SimpleWeather web
 
-## Project setup
-```
+React client built with Vite.
+
+```bash
 npm install
+npm run dev
 ```
 
-### Compiles and hot-reloads for development
-```
-npm run serve
-```
+Set `VITE_API_URL` in `.env.local` when the API is not running at `http://127.0.0.1:8000`.
 
-### Compiles and minifies for production
-```
-npm run build
-```
-
-### Lints and fixes files
-```
-npm run lint
-```
-
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
+Use `npm run build` to create the production bundle.
