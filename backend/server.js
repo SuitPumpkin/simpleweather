@@ -11,6 +11,7 @@ const FORECAST_CACHE_TTL_MS = 30 * 60 * 1000;
 const NASA_URL = 'https://power.larc.nasa.gov/api/temporal/daily/point';
 const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_ARCHIVE = 'https://archive-api.open-meteo.com/v1/archive';
+const MET_FORECAST = 'https://api.met.no/weatherapi/locationforecast/2.0/compact';
 
 const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8080')
   .split(',')
@@ -116,6 +117,72 @@ function rainProbability(precipitation) {
   return precipitation > 0.1 ? Math.min(100, Math.floor(20 + precipitation * 10)) : 0;
 }
 
+function metWeatherCode(symbol = '') {
+  const code = symbol.toLowerCase();
+  if (code.includes('thunder')) return 95;
+  if (code.includes('snow')) return 71;
+  if (code.includes('sleet')) return 66;
+  if (code.includes('rain') || code.includes('shower')) return 61;
+  if (code.includes('fog')) return 45;
+  if (code.includes('cloudy')) return 3;
+  if (code.includes('partly') || code.includes('fair')) return 2;
+  return 0;
+}
+
+async function getMetForecast(lat, lon, date) {
+  const params = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+  const data = await fetchJson(`${MET_FORECAST}?${params}`, {
+    headers: {
+      'User-Agent': process.env.WEATHER_USER_AGENT || 'SimpleWeather/1.0 (weather application)',
+    },
+  });
+  const points = data?.properties?.timeseries || [];
+  const byDate = new Map();
+  for (const point of points) {
+    const day = point.time.slice(0, 10);
+    const details = point.data?.instant?.details || {};
+    const temperature = Number(details.air_temperature);
+    if (!Number.isFinite(temperature)) continue;
+    const nextHour = point.data?.next_1_hours;
+    const precipitation = Number(nextHour?.details?.precipitation_amount || 0);
+    const symbol = nextHour?.summary?.symbol_code || '';
+    if (!byDate.has(day)) byDate.set(day, []);
+    byDate.get(day).push({
+      time: point.time,
+      temperature,
+      precipitation: Number.isFinite(precipitation) ? precipitation : 0,
+      weatherCode: metWeatherCode(symbol),
+    });
+  }
+
+  const days = [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const targetIndex = days.findIndex(([day]) => day === date);
+  if (targetIndex < 0) throw new Error('Fallback weather provider returned no data for the requested date');
+
+  const toDaily = ([day, entries]) => {
+    const max = Math.max(...entries.map((entry) => entry.temperature));
+    const min = Math.min(...entries.map((entry) => entry.temperature));
+    const rain = entries.reduce((sum, entry) => sum + entry.precipitation, 0);
+    return {
+      date: day,
+      max: Number(max.toFixed(1)),
+      min: Number(min.toFixed(1)),
+      rainProb: rainProbability(rain),
+      weatherCode: entries[Math.floor(entries.length / 2)]?.weatherCode ?? 0,
+    };
+  };
+  const target = toDaily(days[targetIndex]);
+  const hourly = days[targetIndex][1].slice(0, 24).map((entry) => ({
+    hour: entry.time.slice(11, 16),
+    temp: entry.temperature,
+  }));
+  return {
+    main_day: target,
+    forecast: days.slice(targetIndex + 1, targetIndex + 5).map(toDaily),
+    hourly_data: hourly,
+  };
+}
+
 async function getHistoricalYear(lat, lon, targetDate) {
   const date = targetDate.toISOString().slice(0, 10).replaceAll('-', '');
   const params = new URLSearchParams({
@@ -206,7 +273,15 @@ app.get('/forecast', async (request, response) => {
   const endDate = isArchive ? date : new Date(target.getTime() + 4 * 86400000).toISOString().slice(0, 10);
   const params = new URLSearchParams({ latitude: String(lat), longitude: String(lon), daily: isArchive ? 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum' : 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max', hourly: 'temperature_2m,weather_code', timezone: 'auto', start_date: date, end_date: endDate });
   try {
-    const data = await fetchJson(`${isArchive ? OPEN_METEO_ARCHIVE : OPEN_METEO_FORECAST}?${params}`);
+    let data;
+    try {
+      data = await fetchJson(`${isArchive ? OPEN_METEO_ARCHIVE : OPEN_METEO_FORECAST}?${params}`);
+    } catch (error) {
+      if (isArchive || error.status !== 429) throw error;
+      console.warn('Open-Meteo rate limited; using MET Norway fallback');
+      const fallback = await getMetForecast(lat, lon, date);
+      return response.json(cacheSet(key, fallback, FORECAST_CACHE_TTL_MS));
+    }
     const daily = data.daily;
     const probability = daily.precipitation_probability_max?.[0] ?? rainProbability(daily.precipitation_sum?.[0] ?? 0);
     const forecast = daily.time.slice(1).map((day, index) => ({ date: day, max: daily.temperature_2m_max[index + 1], min: daily.temperature_2m_min[index + 1], rainProb: daily.precipitation_probability_max?.[index + 1] ?? rainProbability(daily.precipitation_sum?.[index + 1] ?? 0), weatherCode: daily.weather_code[index + 1] }));

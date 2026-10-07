@@ -105,6 +105,7 @@ Copy `backend/.env.example` to `backend/.env` and configure `NASA_API_KEY` when 
 ```env
 NASA_API_KEY=your_nasa_api_key
 CORS_ORIGINS=http://localhost:5173,http://localhost:8080
+WEATHER_USER_AGENT=SimpleWeather/1.0 (admin@example.com)
 ```
 
 For a remote API, copy `frontend/.env.example` to `frontend/.env.local` and set `VITE_API_URL`.
@@ -144,6 +145,7 @@ The project is configured for deployment on **Render** with two services.
 |---|---|---|---|
 | `NASA_API_KEY` | No | — | NASA POWER API key for higher rate limits |
 | `CORS_ORIGINS` | No | `http://localhost:5173,http://localhost:8080` | Comma-separated allowed origins |
+| `WEATHER_USER_AGENT` | No | `SimpleWeather/1.0 (weather application)` | Identification sent to the MET Norway fallback provider |
 | `PORT` | No | `8000` | Server port (injected by Render) |
 
 **Web service**
