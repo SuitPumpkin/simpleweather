@@ -104,7 +104,7 @@ Copy `backend/.env.example` to `backend/.env` and configure `NASA_API_KEY` when 
 
 ```env
 NASA_API_KEY=your_nasa_api_key
-CORS_ORIGINS=http://localhost:5173,http://localhost:8080
+CORS_ORIGINS=http://localhost:5173,http://localhost:8080,https://simpleweather-1.onrender.com (change this one to your deploy url)
 WEATHER_USER_AGENT=SimpleWeather/1.0 (admin@example.com)
 ```
 
@@ -154,7 +154,7 @@ The project is configured for deployment on **Render** with two services.
 |---|---|---|---|
 | `VITE_API_URL` | Yes | `http://127.0.0.1:8000` | Backend API URL |
 
-Set `VITE_API_URL` to the Render URL of your API service, e.g. `https://simpleweather-api.onrender.com`. Set `CORS_ORIGINS` on the API to the Render URL of your frontend.
+Set `VITE_API_URL` to the Render URL of your API service, e.g. `https://simpleweather-api.onrender.com`. Set `CORS_ORIGINS` on the API to the Render URL of your frontend. For the current deployment, use `https://simpleweather-1.onrender.com`.
 
 ---
 

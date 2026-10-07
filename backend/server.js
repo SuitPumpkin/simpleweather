@@ -13,7 +13,7 @@ const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_ARCHIVE = 'https://archive-api.open-meteo.com/v1/archive';
 const MET_FORECAST = 'https://api.met.no/weatherapi/locationforecast/2.0/compact';
 
-const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8080')
+const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8080,https://simpleweather-1.onrender.com')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
