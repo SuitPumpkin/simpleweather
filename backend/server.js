@@ -11,6 +11,7 @@ const FORECAST_CACHE_TTL_MS = 30 * 60 * 1000;
 const NASA_URL = 'https://power.larc.nasa.gov/api/temporal/daily/point';
 const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_ARCHIVE = 'https://archive-api.open-meteo.com/v1/archive';
+const OPEN_METEO_GEOCODING = 'https://geocoding-api.open-meteo.com/v1/search';
 const MET_FORECAST = 'https://api.met.no/weatherapi/locationforecast/2.0/compact';
 
 const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8080,https://simpleweather-1.onrender.com')
@@ -150,6 +151,10 @@ async function getMetForecast(lat, lon, date) {
     byDate.get(day).push({
       time: point.time,
       temperature,
+      apparentTemp: Number(details.air_temperature),
+      humidity: Number(details.relative_humidity),
+      wind: Number(details.wind_speed) * 3.6,
+      cloudCover: Number(details.cloud_area_fraction),
       precipitation: Number.isFinite(precipitation) ? precipitation : 0,
       weatherCode: metWeatherCode(symbol),
     });
@@ -175,6 +180,13 @@ async function getMetForecast(lat, lon, date) {
   const hourly = days[targetIndex][1].slice(0, 24).map((entry) => ({
     hour: entry.time.slice(11, 16),
     temp: entry.temperature,
+    apparentTemp: entry.apparentTemp,
+    humidity: Number.isFinite(entry.humidity) ? Math.round(entry.humidity) : undefined,
+    wind: Number.isFinite(entry.wind) ? Number(entry.wind.toFixed(1)) : undefined,
+    cloudCover: Number.isFinite(entry.cloudCover) ? Math.round(entry.cloudCover) : undefined,
+    precipitation: entry.precipitation,
+    rainProb: undefined,
+    uv: undefined,
   }));
   return {
     main_day: target,
@@ -208,7 +220,18 @@ async function getHistoricalYear(lat, lon, targetDate) {
   };
 }
 
-function recommendations(summary) {
+function recommendations(summary, language = 'en') {
+  if (language === 'es') {
+    const result = [];
+    if (summary.max > 28 && summary.rainProb > 40) result.push('Historial de calor y lluvia. Considera ropa ligera e impermeable y mantente hidratado.');
+    else if (summary.min < 10 && summary.rainProb > 40) result.push('Historial de frío y lluvia. Usa varias capas y un abrigo impermeable.');
+    if (summary.rainProb > 60) result.push('Alta probabilidad histórica de lluvia. No olvides tu paraguas.');
+    else if (summary.rainProb > 30) result.push('Lluvias históricas dispersas. Un impermeable sería buena idea.');
+    if (summary.max > 30 && !result.some((item) => item.includes('calor'))) result.push('Día históricamente caluroso. Busca sombra y usa protector solar.');
+    else if (summary.min < 10 && !result.some((item) => item.includes('frío'))) result.push('Día históricamente frío. Abrígate bien.');
+    if (summary.wind > 25) result.push('Vientos históricamente fuertes. Asegura los objetos sueltos.');
+    return result.length ? result : ['El clima suele ser agradable, sin condiciones extremas destacables.'];
+  }
   const result = [];
   if (summary.max > 28 && summary.rainProb > 40) result.push('Heat and rain history. Consider light, waterproof clothing and stay hydrated.');
   else if (summary.min < 10 && summary.rainProb > 40) result.push('Cold and rain history. Dress in layers with a waterproof coat.');
@@ -220,6 +243,48 @@ function recommendations(summary) {
   return result.length ? result : ['Weather is usually pleasant, with no notable extreme conditions.'];
 }
 
+function normalizeGeocodingResults(results) {
+  return results
+    .map((item) => ({
+      id: item.id ?? `${item.latitude},${item.longitude}`,
+      city: item.name,
+      country: item.country ?? '',
+      admin1: item.admin1 ?? '',
+      lat: Number(item.latitude),
+      lng: Number(item.longitude),
+      type: item.type ?? '',
+    }))
+    .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
+}
+
+app.get('/search', async (request, response) => {
+  const query = request.query.q?.trim();
+  if (!query || query.length < 2) {
+    return response.status(400).json({ error: 'Search query is required (minimum 2 characters).' });
+  }
+
+  const language = request.query.lang === 'en' ? 'en' : 'es';
+  const params = new URLSearchParams({
+    name: query,
+    count: '8',
+    language,
+    format: 'json',
+  });
+
+  const cacheKey = `search:${query.toLowerCase()}:${language}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return response.json(cached);
+
+  try {
+    const data = await fetchJson(`${OPEN_METEO_GEOCODING}?${params}`);
+    const results = normalizeGeocodingResults(data?.results || []);
+    return response.json(cacheSet(cacheKey, { results }, CACHE_TTL_MS * 3));
+  } catch (error) {
+    console.error('Geocoding error:', error.message);
+    return response.status(502).json({ error: 'Could not retrieve place suggestions.' });
+  }
+});
+
 app.get('/health', (_request, response) => response.json({ status: 'ok', service: 'simpleweather-api' }));
 
 app.get('/weather', async (request, response) => {
@@ -228,10 +293,11 @@ app.get('/weather', async (request, response) => {
   const day = Number(request.query.day);
   const month = Number(request.query.month);
   const year = Number(request.query.year);
+  const language = request.query.lang === 'en' ? 'en' : 'es';
   if (!validateCoordinates(lat, lon) || !Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) {
     return response.status(400).json({ error: 'Invalid location or date.' });
   }
-  const key = `history:${lat.toFixed(3)}:${lon.toFixed(3)}:${day}:${month}:${year}`;
+  const key = `history:${lat.toFixed(3)}:${lon.toFixed(3)}:${day}:${month}:${year}:${language}`;
   const cached = cacheGet(key);
   if (cached) return response.json(cached);
 
@@ -248,7 +314,7 @@ app.get('/weather', async (request, response) => {
       wind: Math.round(historical.reduce((sum, item) => sum + item.wind, 0) / historical.length),
       hourly_data: historical[0].hourly_data,
     };
-    return response.json(cacheSet(key, { historical_summary: summary, historical_yearly_data: historical, recommendations: recommendations(summary) }));
+    return response.json(cacheSet(key, { historical_summary: summary, historical_yearly_data: historical,     recommendations: recommendations(summary, language) }));
   } catch (error) {
     console.error('Historical weather error:', error.message);
     return response.status(502).json({ error: 'Historical data could not be obtained.' });
@@ -271,7 +337,7 @@ app.get('/forecast', async (request, response) => {
 
   const isArchive = daysFromToday < -90;
   const endDate = isArchive ? date : new Date(target.getTime() + 4 * 86400000).toISOString().slice(0, 10);
-  const params = new URLSearchParams({ latitude: String(lat), longitude: String(lon), daily: isArchive ? 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum' : 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max', hourly: 'temperature_2m,weather_code', timezone: 'auto', start_date: date, end_date: endDate });
+  const params = new URLSearchParams({ latitude: String(lat), longitude: String(lon), daily: isArchive ? 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum' : 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max', hourly: 'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,precipitation,wind_speed_10m,cloud_cover,uv_index,weather_code', timezone: 'auto', start_date: date, end_date: endDate });
   try {
     let data;
     try {
@@ -285,7 +351,7 @@ app.get('/forecast', async (request, response) => {
     const daily = data.daily;
     const probability = daily.precipitation_probability_max?.[0] ?? rainProbability(daily.precipitation_sum?.[0] ?? 0);
     const forecast = daily.time.slice(1).map((day, index) => ({ date: day, max: daily.temperature_2m_max[index + 1], min: daily.temperature_2m_min[index + 1], rainProb: daily.precipitation_probability_max?.[index + 1] ?? rainProbability(daily.precipitation_sum?.[index + 1] ?? 0), weatherCode: daily.weather_code[index + 1] }));
-    const result = { main_day: { date: daily.time[0], max: daily.temperature_2m_max[0], min: daily.temperature_2m_min[0], rainProb: probability, weatherCode: daily.weather_code[0] }, forecast, hourly_data: data.hourly.time.slice(0, 24).map((time, index) => ({ hour: time.split('T')[1], temp: data.hourly.temperature_2m[index] })) };
+    const result = { main_day: { date: daily.time[0], max: daily.temperature_2m_max[0], min: daily.temperature_2m_min[0], rainProb: probability, weatherCode: daily.weather_code[0] }, forecast, hourly_data: data.hourly.time.slice(0, 24).map((time, index) => ({ hour: time.split('T')[1], temp: data.hourly.temperature_2m[index], apparentTemp: data.hourly.apparent_temperature?.[index], humidity: data.hourly.relative_humidity_2m?.[index], rainProb: data.hourly.precipitation_probability?.[index], precipitation: data.hourly.precipitation?.[index], wind: data.hourly.wind_speed_10m?.[index], cloudCover: data.hourly.cloud_cover?.[index], uv: data.hourly.uv_index?.[index], weatherCode: data.hourly.weather_code?.[index] })) };
     return response.json(cacheSet(key, result, FORECAST_CACHE_TTL_MS));
   } catch (error) {
     console.error('Forecast error:', error.message);

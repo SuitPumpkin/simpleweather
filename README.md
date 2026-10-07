@@ -27,7 +27,7 @@ Please preserve the original project credits when presenting or distributing thi
 | **Open-Meteo** | Forecast and weather data |
 | **NASA POWER** | Historical weather data |
 
-The API performs historical provider requests concurrently, caches responses in memory, validates inputs, and applies upstream timeouts. Forecast responses are cached for 30 minutes and can be served stale for up to six hours if Open-Meteo temporarily rate-limits the production server. The web client loads the city dataset on demand to keep the initial bundle small.
+The API performs historical provider requests concurrently, caches responses in memory, validates inputs, and applies upstream timeouts. Place search uses Open-Meteo Geocoding with localized results. Forecast responses include hourly apparent temperature, humidity, precipitation probability, wind, cloud cover, UV index, and weather code so the client can tailor outing advice. Forecasts are cached for 30 minutes and can be served stale for up to six hours if Open-Meteo temporarily rate-limits the production server. The web client loads the city dataset on demand to keep the initial bundle small.
 
 ---
 
@@ -36,6 +36,7 @@ The API performs historical provider requests concurrently, caches responses in 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | Health check |
+| `GET` | `/search?q=&lang=es\|en` | Place search through Open-Meteo Geocoding |
 | `GET` | `/weather?lat=&lon=&day=&month=&year=` | 5-year historical summary |
 | `GET` | `/forecast?lat=&lon=&date=YYYY-MM-DD` | Short-term forecast |
 
